@@ -55,15 +55,28 @@ export class ConversationCompletionUseCase implements UseCase<ConversationComple
       throw new ServerError(`Conversation non trouvée: ${command.conversationId}`);
     }
 
-    let messageHistory : Message[] = conversations.map(m => { 
+    const storedHistory: Message[] = conversations.map(m => {
       if (!['user', 'system', 'assistant'].includes(m.role)) {
         throw new ServerError('Role de message invalide');
       }
       return {
-        role : m.role as 'user' | 'system' | 'assistant', 
-        content: m.content 
-      }
+        role: m.role as 'user' | 'system' | 'assistant',
+        content: m.content
+      };
     });
+
+    const requestMessages: Message[] = command.messages.map(m => ({ role: m.role, content: m.content }));
+
+    // Enregistrement des messages du client dans l'historique avant l'inference
+    for (const msg of requestMessages) {
+      await database.client.messageModel?.addEntry({
+        role: msg.role,
+        content: msg.content,
+        conversation_id: Number(command.conversationId)
+      });
+    }
+
+    const messageHistory: Message[] = [...storedHistory, ...requestMessages];
 
 
     // Demande de réponse du LLM en mode non stream
@@ -142,11 +155,10 @@ export class ConversationCompletionUseCase implements UseCase<ConversationComple
 
         // Enregistrement de la réponse même si elle est interrompue
         } finally {
-          const llmResponseSavedEntry = await database.client.messageModel?.addEntry({
-            role: 'assistant',
-            content: concatenatedResponse,
-            conversation_id: Number(command.conversationId)
-          });
+          await database.client.messageModel?.model?.update(
+            { content: concatenatedResponse },
+            { where: { id: llmResponseSavedEntry.id } }
+          );
         }
       }
 

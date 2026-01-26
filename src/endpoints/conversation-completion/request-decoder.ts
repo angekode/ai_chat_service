@@ -15,6 +15,7 @@ export class ConversationCompletionRequestDecoder implements RequestDecoder<Requ
     }
     const validatedRequest = conversationCompletionScheme.parse(req.body);
     const command : ConversationCompletionCommand = {
+      messages: validatedRequest.messages,
       stream: validatedRequest.stream,
       conversationId: req.params.conversationId
     };
